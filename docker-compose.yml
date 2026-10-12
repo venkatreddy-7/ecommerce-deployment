@@ -98,6 +98,7 @@ services:
     container_name: api-gateway
     environment:
       SPRING_CONFIG_IMPORT: optional:configserver:http://config-server:8888
+      EUREKA_CLIENT_SERVICE_URL_DEFAULTZONE: "http://discovery-server:8761/eureka/"
       EUREKA_HOST: discovery-server
       EUREKA_PORT: "8761"
     ports:
