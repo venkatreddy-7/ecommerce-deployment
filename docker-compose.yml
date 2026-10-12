@@ -1,0 +1,119 @@
+services:
+  postgres:
+    image: postgres:16
+    container_name: ecommerce-postgres
+    environment:
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD: ${DB_PASSWORD:-postgres}
+      POSTGRES_DB: postgres
+    ports:
+      - "5432:5432"
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+      - ./postgres/init.sql:/docker-entrypoint-initdb.d/init.sql:ro
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U postgres"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    networks:
+      - ecommerce-network
+
+  config-server:
+    build:
+      context: ../config-server
+    container_name: config-server
+    ports:
+      - "8888:8888"
+    networks:
+      - ecommerce-network
+    restart: unless-stopped
+
+  discovery-server:
+    build:
+      context: ../discovery-server
+    container_name: discovery-server
+    ports:
+      - "8761:8761"
+    networks:
+      - ecommerce-network
+    depends_on:
+      - config-server
+    restart: unless-stopped
+
+  auth-service:
+    build:
+      context: ../auth-service
+    container_name: auth-service
+    environment:
+      SPRING_CONFIG_IMPORT: optional:configserver:http://config-server:8888
+      DB_HOST: postgres
+      DB_PORT: "5432"
+      DB_USERNAME: postgres
+      DB_PASSWORD: ${DB_PASSWORD:-postgres}
+      EUREKA_HOST: discovery-server
+      EUREKA_PORT: "8761"
+      JWT_SECRET: ${JWT_SECRET:-my-passcode-my-password-must-be-32-chars-long}
+    ports:
+      - "8081:8081"
+    networks:
+      - ecommerce-network
+    depends_on:
+      postgres:
+        condition: service_healthy
+      config-server:
+        condition: service_started
+      discovery-server:
+        condition: service_started
+    restart: unless-stopped
+
+  product-service:
+    build:
+      context: ../product-service
+    container_name: product-service
+    environment:
+      SPRING_CONFIG_IMPORT: optional:configserver:http://config-server:8888
+      DB_HOST: postgres
+      DB_PORT: "5432"
+      DB_USERNAME: postgres
+      DB_PASSWORD: ${DB_PASSWORD:-postgres}
+      EUREKA_HOST: discovery-server
+      EUREKA_PORT: "8761"
+    ports:
+      - "8082:8082"
+    networks:
+      - ecommerce-network
+    depends_on:
+      postgres:
+        condition: service_healthy
+      config-server:
+        condition: service_started
+      discovery-server:
+        condition: service_started
+    restart: unless-stopped
+
+  api-gateway:
+    build:
+      context: ../api-gateway
+    container_name: api-gateway
+    environment:
+      SPRING_CONFIG_IMPORT: optional:configserver:http://config-server:8888
+      EUREKA_HOST: discovery-server
+      EUREKA_PORT: "8761"
+    ports:
+      - "8080:8080"
+    networks:
+      - ecommerce-network
+    depends_on:
+      - config-server
+      - discovery-server
+      - auth-service
+      - product-service
+    restart: unless-stopped
+
+networks:
+  ecommerce-network:
+    driver: bridge
+
+volumes:
+  postgres_data:
